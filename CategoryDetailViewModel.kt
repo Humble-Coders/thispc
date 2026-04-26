@@ -1,170 +1,176 @@
-clc;
-clear;
+%% ==========================================================
+% TWO PHASE METHOD (Same format as your simplex code)
+% Min Z = 2x1 + 3x2
+% s.t.
+% x1 + x2 >= 4
+% x1 + 2x2 = 6
+% 2x1 + x2 <= 8
+% x1,x2 >= 0
+%% ==========================================================
 
-%% TWO-PHASE METHOD (without linprog)
+clc
+clear all
+format short
 
+%% ----------------------------------------------------------
+% PHASE I
 % Variables:
-% [x1 x2 s1 a1 a2 s3]
+% x1 x2 s1 s3 a1 a2
+%% ----------------------------------------------------------
 
-%% -------------------------------------------------
-% PHASE I : Minimize W = a1 + a2
-%% -------------------------------------------------
+C1 = [0 0 0 0 -1 -1];   % Max(-a1-a2)
 
-C1 = [0 0 0 1 1 0];
+info = [1 1 -1 0 1 0;
+        1 2  0 0 0 1;
+        2 1  0 1 0 0];
 
-A = [
-    1 1 -1 1 0 0 4;
-    1 2  0 0 1 0 6;
-    2 1  0 0 0 1 8
-];
+b = [4;6;8];
 
-BV = [4 5 6];   % a1, a2, s3 are initial basic vars
+A = [info b];
 
-[m,n1] = size(A);
-n = n1 - 1;     % excluding RHS
+Cost = [C1 0];
 
-fprintf('=========== PHASE I ===========\n');
+% Initial Basic Variables = a1,a2,s3
+BV = [5 6 4];
 
-while true
+% Initial Zj-Cj
+ZRow = Cost(BV)*A - Cost;
+
+fprintf('=========== PHASE I ===========\n')
+
+Run = true;
+
+while Run
     
-    % Compute Zj
-    Zj = zeros(1,n+1);
-    for i = 1:m
-        Zj = Zj + C1(BV(i))*A(i,:);
-    end
-    
-    % Compute Cj - Zj
-    CJ_ZJ = [C1 0] - Zj;
-    
-    disp('Current Tableau:')
-    disp(A)
-    
-    disp('Cj - Zj:')
-    disp(CJ_ZJ)
-    
-    % Check optimality
-    [minval,pivot_col] = min(CJ_ZJ(1:n));
-    
-    if minval >= 0
-        break;
-    end
-    
-    % Ratio test
-    ratio = inf(m,1);
-    for i = 1:m
-        if A(i,pivot_col) > 0
-            ratio(i) = A(i,end)/A(i,pivot_col);
+    if any(ZRow(1:end-1) < 0)
+        
+        ZC = ZRow(1:end-1);
+        [EnterCol,Pvt_Col] = min(ZC);
+        
+        sol = A(:,end);
+        Column = A(:,Pvt_Col);
+        
+        ratio = inf(size(Column));
+        
+        for i=1:length(Column)
+            if Column(i)>0
+                ratio(i)=sol(i)/Column(i);
+            end
         end
-    end
-    
-    [~,pivot_row] = min(ratio);
-    
-    % Update basis
-    BV(pivot_row) = pivot_col;
-    
-    % Pivot
-    pivot = A(pivot_row,pivot_col);
-    A(pivot_row,:) = A(pivot_row,:) / pivot;
-    
-    for i = 1:m
-        if i ~= pivot_row
-            A(i,:) = A(i,:) - A(i,pivot_col)*A(pivot_row,:);
+        
+        [MinRatio,Pvt_Row] = min(ratio);
+        
+        BV(Pvt_Row)=Pvt_Col;
+        
+        Pvt_Key = A(Pvt_Row,Pvt_Col);
+        A(Pvt_Row,:) = A(Pvt_Row,:)/Pvt_Key;
+        
+        for i=1:size(A,1)
+            if i~=Pvt_Row
+                A(i,:) = A(i,:) - A(i,Pvt_Col)*A(Pvt_Row,:);
+            end
         end
+        
+        ZRow = ZRow - ZRow(Pvt_Col)*A(Pvt_Row,:);
+        
+        disp(array2table([ZRow;A]))
+        
+    else
+        Run = false;
     end
+    
 end
 
-W = Zj(end);
+W = -ZRow(end);
 
-fprintf('Minimum W = %f\n',W);
+fprintf('Phase I optimum W = %f\n',W)
 
 if abs(W) > 1e-6
-    fprintf('Problem is infeasible.\n');
-    return;
+    fprintf('Problem is infeasible\n')
+    return
 end
 
-%% -------------------------------------------------
-% Remove artificial variable columns a1,a2
-%% -------------------------------------------------
+%% ----------------------------------------------------------
+% PHASE II
+% Remove artificial columns a1,a2
+%% ----------------------------------------------------------
 
-A(:,[4 5]) = [];
+fprintf('\n=========== PHASE II ===========\n')
+
+A(:,[5 6]) = [];
 
 % New variables:
-% [x1 x2 s1 s3]
+% x1 x2 s1 s3
 
-C2 = [2 3 0 0];
+C2 = [-2 -3 0 0];   % Max(-2x1-3x2)
 
-% Update basis indices after removing cols
-for i = 1:length(BV)
-    if BV(i) > 5
-        BV(i) = BV(i) - 2;
-    elseif BV(i) > 3
-        BV(i) = BV(i) - 1;
+Cost = [C2 0];
+
+% Update BV after removing columns
+for i=1:length(BV)
+    
+    if BV(i)==5 || BV(i)==6
+        % If artificial still in basis, replace manually
+        BV(i)=1;
+    elseif BV(i)>6
+        BV(i)=BV(i)-2;
+    elseif BV(i)>4
+        BV(i)=BV(i)-2;
     end
+    
 end
 
-n = size(A,2) - 1;
+ZRow = Cost(BV)*A - Cost;
 
-fprintf('\n=========== PHASE II ===========\n');
+Run = true;
 
-while true
+while Run
     
-    % Compute Zj
-    Zj = zeros(1,n+1);
-    for i = 1:m
-        Zj = Zj + C2(BV(i))*A(i,:);
-    end
-    
-    % Compute Cj - Zj
-    CJ_ZJ = [C2 0] - Zj;
-    
-    disp('Current Tableau:')
-    disp(A)
-    
-    disp('Cj - Zj:')
-    disp(CJ_ZJ)
-    
-    % Check optimality
-    [minval,pivot_col] = min(CJ_ZJ(1:n));
-    
-    if minval >= 0
-        break;
-    end
-    
-    % Ratio test
-    ratio = inf(m,1);
-    for i = 1:m
-        if A(i,pivot_col) > 0
-            ratio(i) = A(i,end)/A(i,pivot_col);
+    if any(ZRow(1:end-1) < 0)
+        
+        ZC = ZRow(1:end-1);
+        [EnterCol,Pvt_Col] = min(ZC);
+        
+        sol = A(:,end);
+        Column = A(:,Pvt_Col);
+        
+        ratio = inf(size(Column));
+        
+        for i=1:length(Column)
+            if Column(i)>0
+                ratio(i)=sol(i)/Column(i);
+            end
         end
-    end
-    
-    [~,pivot_row] = min(ratio);
-    
-    % Update basis
-    BV(pivot_row) = pivot_col;
-    
-    % Pivot
-    pivot = A(pivot_row,pivot_col);
-    A(pivot_row,:) = A(pivot_row,:) / pivot;
-    
-    for i = 1:m
-        if i ~= pivot_row
-            A(i,:) = A(i,:) - A(i,pivot_col)*A(pivot_row,:);
+        
+        [MinRatio,Pvt_Row] = min(ratio);
+        
+        BV(Pvt_Row)=Pvt_Col;
+        
+        Pvt_Key = A(Pvt_Row,Pvt_Col);
+        A(Pvt_Row,:) = A(Pvt_Row,:)/Pvt_Key;
+        
+        for i=1:size(A,1)
+            if i~=Pvt_Row
+                A(i,:) = A(i,:) - A(i,Pvt_Col)*A(Pvt_Row,:);
+            end
         end
+        
+        ZRow = ZRow - ZRow(Pvt_Col)*A(Pvt_Row,:);
+        
+        disp(array2table([ZRow;A]))
+        
+    else
+        Run = false;
     end
+    
 end
 
-%% Final Solution
+disp('Optimal Solution')
 
-x = zeros(n,1);
+BFS = zeros(1,size(A,2));
+BFS(BV)=A(:,end);
+BFS(end)=sum(BFS.*Cost);
 
-for i = 1:m
-    x(BV(i)) = A(i,end);
-end
+disp(BFS)
 
-Z = C2*x;
-
-fprintf('\n=========== FINAL ANSWER ===========\n');
-fprintf('x1 = %f\n',x(1));
-fprintf('x2 = %f\n',x(2));
-fprintf('Minimum Z = %f\n',Z);
+fprintf('Minimum Z = %f\n',-BFS(end))
