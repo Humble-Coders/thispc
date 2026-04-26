@@ -1,85 +1,98 @@
-clc;
-clear;
+%% ==========================================================
+% BIG M METHOD (Same format as your simplex code)
+% Min Z = 2x1 + 3x2
+% s.t.
+% x1 + x2 >= 4
+% x1 + 2x2 = 6
+% 2x1 + x2 <= 8
+% x1,x2 >= 0
+%% ==========================================================
 
-M = 1e6;
+clc
+clear all
+format short
 
-% Cost coefficients
-C = [2 3 0 M M 0];
+M = 1000;
 
-% Initial Tableau
-A = [
-    1 1 -1 1 0 0 4;
-    1 2  0 0 1 0 6;
-    2 1  0 0 0 1 8
-];
+% Convert to Max form:
+% Max (-2x1 -3x2 -M a1 -M a2)
 
-% Initial basic variables: a1,a2,s3
-BV = [4 5 6];
+C = [-2 -3 0 0 -M -M];
 
-[m,n] = size(A);
-n = n-1;   % last column is RHS
+% Variables:
+% x1 x2 s1 s3 a1 a2
 
-while true
+info = [1 1 -1 0 1 0;
+        1 2  0 0 0 1;
+        2 1  0 1 0 0];
 
-    % Compute Zj
-    Zj = zeros(1,n+1);
+b = [4;6;8];
 
-    for i = 1:m
-        Zj = Zj + C(BV(i))*A(i,:);
-    end
+A = [info b];
 
-    % Compute Cj-Zj
-    CJ_ZJ = [C 0] - Zj;
+NOVariables = 2;
 
-    fprintf('\nCurrent Tableau:\n');
-    disp(A);
+% Cost row
+Cost = [C 0];
 
-    fprintf('Cj-Zj:\n');
-    disp(CJ_ZJ);
+% Initial Basic Variables = a1,a2,s3
+BV = [5 6 4];
 
-    % Optimality test for minimization
-    [minval, pivot_col] = min(CJ_ZJ(1:n));
+% Compute Zj-Cj
+ZRow = Cost(BV)*A - Cost;
 
-    if minval >= 0
-        break;
-    end
+ZjCj = [ZRow;A];
+disp(array2table(ZjCj))
 
-    % Ratio Test
-    ratio = inf(m,1);
+Run = true;
 
-    for i = 1:m
-        if A(i,pivot_col) > 0
-            ratio(i) = A(i,end)/A(i,pivot_col);
+while Run
+    
+    if any(ZRow(1:end-1) < 0)
+        
+        ZC = ZRow(1:end-1);
+        [EnterCol,Pvt_Col] = min(ZC);
+        
+        sol = A(:,end);
+        Column = A(:,Pvt_Col);
+        
+        ratio = inf(size(Column));
+        
+        for i=1:length(Column)
+            if Column(i)>0
+                ratio(i)=sol(i)/Column(i);
+            end
         end
-    end
-
-    [~, pivot_row] = min(ratio);
-
-    % Update basic variable
-    BV(pivot_row) = pivot_col;
-
-    % Pivot Operation
-    pivot = A(pivot_row,pivot_col);
-    A(pivot_row,:) = A(pivot_row,:) / pivot;
-
-    for i = 1:m
-        if i ~= pivot_row
-            A(i,:) = A(i,:) - A(i,pivot_col)*A(pivot_row,:);
+        
+        [MinRatio,Pvt_Row] = min(ratio);
+        
+        BV(Pvt_Row)=Pvt_Col;
+        
+        Pvt_Key = A(Pvt_Row,Pvt_Col);
+        A(Pvt_Row,:) = A(Pvt_Row,:)/Pvt_Key;
+        
+        for i=1:size(A,1)
+            if i~=Pvt_Row
+                A(i,:) = A(i,:) - A(i,Pvt_Col)*A(Pvt_Row,:);
+            end
         end
+        
+        ZRow = ZRow - ZRow(Pvt_Col)*A(Pvt_Row,:);
+        
+        ZjCj = [ZRow;A];
+        disp(array2table(ZjCj))
+        
+    else
+        Run=false;
     end
-
+    
 end
 
-% Final solution
-x = zeros(n,1);
+disp('Optimal Solution')
 
-for i = 1:m
-    x(BV(i)) = A(i,end);
-end
+BFS = zeros(1,size(A,2));
+BFS(BV)=A(:,end);
+BFS(end)=sum(BFS.*Cost);
 
-fprintf('\nOptimal Solution:\n');
-disp(x);
-
-Z = C*x;
-
-fprintf('Minimum Z = %f\n',Z);
+disp(BFS)
+fprintf('Minimum Z = %f\n',-BFS(end))
