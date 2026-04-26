@@ -1,72 +1,123 @@
-package com.humblesolutions.cutq.viewmodel
+clc
+clear all
+format short
 
-import android.app.Application
-import androidx.lifecycle.AndroidViewModel
-import androidx.lifecycle.viewModelScope
-import com.humblesolutions.cutq.repository.AndroidAuthRepository
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
-import java.util.Calendar
+% To Sove tha LPP by Simplex Method
 
-data class ProfileSetupUiState(
-    val name: String = "",
-    val gender: String = "",
-    val dobDay: Int = 1,
-    val dobMonth: Int = 1,
-    val dobYear: Int = Calendar.getInstance().get(Calendar.YEAR) - 25,
-    val dobEnabled: Boolean = false,
-    val isLoading: Boolean = false,
-    val error: String? = null,
-    val success: Boolean = false
-)
+% Min z = x1-3x2+2x3
+% Subject to
+% 3x1-x2+2x3<=7
+% -2x1+4x2<=12
+% -4x1+3x2+8x3<=10
+% x1,x2,x3>=0
 
-class ProfileSetupViewModel(application: Application) : AndroidViewModel(application) {
+% First to change the obejective function from minimization to maximization
+% Convete to Max z = -x1+3x2-2x3
 
-    private val repo = AndroidAuthRepository()
+C = [-1 3 -2 ];
 
-    private val _uiState = MutableStateFlow(ProfileSetupUiState())
-    val uiState: StateFlow<ProfileSetupUiState> = _uiState.asStateFlow()
+info = [3 -1 2;-2 4 0;-4 3 8];
 
-    val months = listOf("Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec")
-    val years: List<Int> = (Calendar.getInstance().get(Calendar.YEAR) - 13 downTo 1930).toList()
+b = [7;12;10];
 
-    val days: List<Int> get() {
-        val m = _uiState.value.dobMonth
-        val y = _uiState.value.dobYear
-        val max = when (m) {
-            2    -> if (y % 4 == 0 && (y % 100 != 0 || y % 400 == 0)) 29 else 28
-            4, 6, 9, 11 -> 30
-            else -> 31
-        }
-        return (1..max).toList()
-    }
+NOVariables = size(info,2);
 
-    fun onNameChange(v: String) = _uiState.update { it.copy(name = v, error = null) }
-    fun onGenderSelect(g: String) = _uiState.update { it.copy(gender = g, error = null) }
-    fun onDobDayChange(d: Int) = _uiState.update { it.copy(dobDay = d.coerceIn(1, days.size)) }
-    fun onDobMonthChange(m: Int) = _uiState.update { it.copy(dobMonth = m, dobDay = _uiState.value.dobDay.coerceIn(1, days.size)) }
-    fun onDobYearChange(y: Int) = _uiState.update { it.copy(dobYear = y, dobDay = _uiState.value.dobDay.coerceIn(1, days.size)) }
-    fun toggleDob() = _uiState.update { it.copy(dobEnabled = !it.dobEnabled) }
-    fun clearError() = _uiState.update { it.copy(error = null) }
+% Add slack variables
 
-    fun save() {
-        val s = _uiState.value
-        if (s.name.isBlank()) { _uiState.update { it.copy(error = "Please enter your name") }; return }
-        if (s.gender.isBlank()) { _uiState.update { it.copy(error = "Please select your gender") }; return }
-        viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, error = null) }
-            try {
-                val dob = if (s.dobEnabled) {
-                    "${s.dobDay.toString().padStart(2, '0')}-${s.dobMonth.toString().padStart(2, '0')}-${s.dobYear}"
-                } else null
-                repo.saveProfile(s.name.trim(), s.gender, dob)
-                _uiState.update { it.copy(isLoading = false, success = true) }
-            } catch (e: Exception) {
-                _uiState.update { it.copy(isLoading = false, error = e.message ?: "Failed to save. Please try again.") }
-            }
-        }
-    }
-}
+s = eye(size(info,1));
+
+A =[info s b];
+
+% Cost row
+
+Cost = zeros(1,size(A,2));
+Cost(1:NOVariables) = C;
+
+% Initial Basic Variables
+BV = NOVariables+1 : size(A,2)-1;
+
+% Compute Zj -Cj
+ZRow = Cost(BV)*A - Cost;
+
+% Display initial table
+ZjCj = [ZRow; A];
+SimpTable = array2table(ZjCj);
+SimpTable.Properties.VariableNames = {'x_1','x_2','x_3','s_1','s_2','s_3','Sol'};
+
+Run = true;
+
+while Run
+    if any (ZRow(1,1:end-1)<0)
+        
+        fprintf('\nThe current BFS is not optimal\n')
+        disp('Old Basic Variables (BV)= ')
+        disp(BV)
+        
+        % Entering Variable
+        ZC = ZRow(1:end-1);
+        [EnterCol,Pvt_Col] = min(ZC) % Most negative element is entered
+        
+        fprintf('Entering Variable is column %d\n', Pvt_Col)
+        
+        %Leaving Variable
+        sol = A(:,end)
+        Column = A(:, Pvt_Col)
+        
+        if all(Column <= 0)
+            error('LPP has unbounded solution ')
+        end
+        
+        ratio = inf(size(Column)); % Give column matrix all entries infinity
+        for i = 1:length(Column)
+            if Column(i) > 0
+                ratio(i) = sol(i) / Column(i);
+            end
+        end
+        
+        [MinRatio, Pvt_Row] = min(ratio);
+        
+        fprintf('Leaving Variables is %d\n', BV(Pvt_Row))
+        
+        % Update BV
+        BV(Pvt_Row) = Pvt_Col; % Replaced leaving variables with entering variables
+        disp('New Basic Variables (BV) = ')
+        disp(BV)
+        
+        % Pivot operation
+        Pvt_Key = A(Pvt_Row, Pvt_Col);
+        A(Pvt_Row,:) = A(Pvt_Row,:) / Pvt_Key; %operation on pivot row
+        
+        for i = 1:size(A,1)
+            if i ~= Pvt_Row
+                A(i,:) = A(i,:) - A(i,Pvt_Col)*A(Pvt_Row,:); %operation on rows other than pivot row
+            end
+        end
+        
+        % Update Z-row (OUTSIDE the loop!)
+        ZRow = ZRow - ZRow(Pvt_Col)*A(Pvt_Row,:)
+        
+        % Display new table
+        ZjCj = [ZRow; A];
+        SimpTable = array2table(ZjCj);
+        SimpTable.Properties.VariableNames={'x_1','x_2','x_3','s_1','s_2','s_3','Sol'}
+        
+        disp(SimpTable)
+        
+        % Current BFS
+        
+        BFS = zeros(1,size(A,2));
+        BFS(BV) = A(:,end);
+        BFS(end) = sum(BFS .* Cost);
+        CurrentBFS = array2table(BFS);
+        CurrentBFS.Properties.VariableNames = {'x_1','x_2','x_3','s_1','s_2','s_3','Sol'}
+        
+        disp('Current BFS:')
+        disp(CurrentBFS)
+        
+    else
+        Run = false;
+        fprintf('\n======================================\n')
+        fprintf('Optimal solution reached\n')
+        fprintf('======================================\n')
+    end
+end
