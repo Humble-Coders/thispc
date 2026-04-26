@@ -1,127 +1,123 @@
-package com.humblesolutions.cutq.viewmodel
+clc
+clear all
+format short
 
-import android.app.Activity
-import android.app.Application
-import androidx.lifecycle.AndroidViewModel
-import androidx.lifecycle.viewModelScope
-import com.humblesolutions.cutq.repository.AndroidAuthRepository
-import com.humblesolutions.cutq.usecase.SendOtpUseCase
-import com.humblesolutions.cutq.usecase.VerifyOtpUseCase
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.receiveAsFlow
-import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
+% To Sove tha LPP by Simplex Method
 
-data class AuthUiState(
-    val isLoading: Boolean = false,
-    val error: String? = null,
-    val phone: String = "",
-    val otp: String = "",
-    val otpResendSeconds: Int = 60,
-    val canResendOtp: Boolean = false
-)
+% Min z = x1-3x2+2x3
+% Subject to
+% 3x1-x2+2x3<=7
+% -2x1+4x2<=12
+% -4x1+3x2+8x3<=10
+% x1,x2,x3>=0
 
-sealed class AuthEvent {
-    object NavigateToPhoneInput : AuthEvent()
-    data class NavigateToOtp(val phone: String) : AuthEvent()
-    object NavigateToHome : AuthEvent()
-    object NavigateToProfileSetup : AuthEvent()
-}
+% First to change the obejective function from minimization to maximization
+% Convete to Max z = -x1+3x2-2x3
 
-class AuthViewModel(application: Application) : AndroidViewModel(application) {
+C = [-1 3 -2 ];
 
-    private val authRepo = AndroidAuthRepository()
-    private val sendOtpUseCase = SendOtpUseCase(authRepo)
-    private val verifyOtpUseCase = VerifyOtpUseCase(authRepo)
+info = [3 -1 2;-2 4 0;-4 3 8];
 
-    private val _uiState = MutableStateFlow(AuthUiState())
-    val uiState: StateFlow<AuthUiState> = _uiState.asStateFlow()
+b = [7;12;10];
 
-    private val _events = Channel<AuthEvent>(Channel.BUFFERED)
-    val events = _events.receiveAsFlow()
+NOVariables = size(info,2);
 
-    init {
-        viewModelScope.launch {
-            authRepo.autoVerifiedEvent.collect {
-                _uiState.update { it.copy(isLoading = false) }
-                val complete = try { authRepo.checkProfileComplete() } catch (_: Exception) { false }
-                _events.send(if (complete) AuthEvent.NavigateToHome else AuthEvent.NavigateToProfileSetup)
-            }
-        }
-    }
+% Add slack variables
 
-    fun attachActivity(activity: Activity) { authRepo.attachActivity(activity) }
+s = eye(size(info,1));
 
-    fun onPhoneChange(value: String) =
-        _uiState.update { it.copy(phone = value.filter(Char::isDigit).take(10), error = null) }
+A =[info s b];
 
-    fun onOtpChange(value: String) =
-        _uiState.update { it.copy(otp = value.filter(Char::isDigit).take(6), error = null) }
+% Cost row
 
-    fun clearError() = _uiState.update { it.copy(error = null) }
+Cost = zeros(1,size(A,2));
+Cost(1:NOVariables) = C;
 
-    fun checkAuthState() {
-        viewModelScope.launch {
-            try {
-                val user = authRepo.getCurrentUser()
-                if (user != null) {
-                    val complete = authRepo.checkProfileComplete()
-                    _events.send(if (complete) AuthEvent.NavigateToHome else AuthEvent.NavigateToProfileSetup)
-                } else {
-                    _events.send(AuthEvent.NavigateToPhoneInput)
-                }
-            } catch (e: Exception) {
-                _events.send(AuthEvent.NavigateToPhoneInput)
-            }
-        }
-    }
+% Initial Basic Variables
+BV = NOVariables+1 : size(A,2)-1;
 
-    fun sendOtp() = launchAuth {
-        sendOtpUseCase.execute(_uiState.value.phone)
-        if (authRepo.wasAutoVerified) {
-            val complete = authRepo.checkProfileComplete()
-            _events.send(if (complete) AuthEvent.NavigateToHome else AuthEvent.NavigateToProfileSetup)
-        } else {
-            _events.send(AuthEvent.NavigateToOtp(_uiState.value.phone))
-        }
-    }
+% Compute Zj -Cj
+ZRow = Cost(BV)*A - Cost;
 
-    fun verifyOtp(phone: String) = launchAuth {
-        verifyOtpUseCase.execute(phone, _uiState.value.otp)
-        val complete = authRepo.checkProfileComplete()
-        _events.send(if (complete) AuthEvent.NavigateToHome else AuthEvent.NavigateToProfileSetup)
-    }
+% Display initial table
+ZjCj = [ZRow; A];
+SimpTable = array2table(ZjCj);
+SimpTable.Properties.VariableNames = {'x_1','x_2','x_3','s_1','s_2','s_3','Sol'};
 
-    fun resendOtp() = launchAuth {
-        sendOtpUseCase.execute(_uiState.value.phone)
-        _uiState.update { it.copy(otp = "") }
-        startResendCountdown()
-    }
+Run = true;
 
-    fun startResendCountdown() {
-        _uiState.update { it.copy(otpResendSeconds = 60, canResendOtp = false) }
-        viewModelScope.launch {
-            for (i in 60 downTo 0) {
-                _uiState.update { it.copy(otpResendSeconds = i) }
-                if (i == 0) { _uiState.update { it.copy(canResendOtp = true) }; break }
-                delay(1000)
-            }
-        }
-    }
-
-    private fun launchAuth(block: suspend () -> Unit) {
-        viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, error = null) }
-            try {
-                block()
-                _uiState.update { it.copy(isLoading = false) }
-            } catch (e: Exception) {
-                _uiState.update { it.copy(isLoading = false, error = e.message ?: "Something went wrong.") }
-            }
-        }
-    }
-}
+while Run
+    if any (ZRow(1,1:end-1)<0)
+        
+        fprintf('\nThe current BFS is not optimal\n')
+        disp('Old Basic Variables (BV)= ')
+        disp(BV)
+        
+        % Entering Variable
+        ZC = ZRow(1:end-1);
+        [EnterCol,Pvt_Col] = min(ZC) % Most negative element is entered
+        
+        fprintf('Entering Variable is column %d\n', Pvt_Col)
+        
+        %Leaving Variable
+        sol = A(:,end)
+        Column = A(:, Pvt_Col)
+        
+        if all(Column <= 0)
+            error('LPP has unbounded solution ')
+        end
+        
+        ratio = inf(size(Column)); % Give column matrix all entries infinity
+        for i = 1:length(Column)
+            if Column(i) > 0
+                ratio(i) = sol(i) / Column(i);
+            end
+        end
+        
+        [MinRatio, Pvt_Row] = min(ratio);
+        
+        fprintf('Leaving Variables is %d\n', BV(Pvt_Row))
+        
+        % Update BV
+        BV(Pvt_Row) = Pvt_Col; % Replaced leaving variables with entering variables
+        disp('New Basic Variables (BV) = ')
+        disp(BV)
+        
+        % Pivot operation
+        Pvt_Key = A(Pvt_Row, Pvt_Col);
+        A(Pvt_Row,:) = A(Pvt_Row,:) / Pvt_Key; %operation on pivot row
+        
+        for i = 1:size(A,1)
+            if i ~= Pvt_Row
+                A(i,:) = A(i,:) - A(i,Pvt_Col)*A(Pvt_Row,:); %operation on rows other than pivot row
+            end
+        end
+        
+        % Update Z-row (OUTSIDE the loop!)
+        ZRow = ZRow - ZRow(Pvt_Col)*A(Pvt_Row,:)
+        
+        % Display new table
+        ZjCj = [ZRow; A];
+        SimpTable = array2table(ZjCj);
+        SimpTable.Properties.VariableNames={'x_1','x_2','x_3','s_1','s_2','s_3','Sol'}
+        
+        disp(SimpTable)
+        
+        % Current BFS
+        
+        BFS = zeros(1,size(A,2));
+        BFS(BV) = A(:,end);
+        BFS(end) = sum(BFS .* Cost);
+        CurrentBFS = array2table(BFS);
+        CurrentBFS.Properties.VariableNames = {'x_1','x_2','x_3','s_1','s_2','s_3','Sol'}
+        
+        disp('Current BFS:')
+        disp(CurrentBFS)
+        
+    else
+        Run = false;
+        fprintf('\n======================================\n')
+        fprintf('Optimal solution reached\n')
+        fprintf('======================================\n')
+    end
+end
